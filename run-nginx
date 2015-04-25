@@ -1,0 +1,36 @@
+#!/bin/bash
+
+: ${SERVERNAME:=localhost}
+sed -i "s/%%SERVERNAME%%/${SERVERNAME}/g" /etc/nginx/nginx.conf
+
+SERVDIR=/etc/nginx/microservices.d
+SOCKDIR=/var/run/api-gateway/sockets
+
+mkdir -p "$SERVDIR"
+for DIR in /etc/microservices/*/; do
+    _srvname=$( basename "$DIR" | tr ' 	' '__' )
+    echo "Configuring microservice: $_srvname"
+
+    _conffile="${SERVDIR}/${_srvname}.conf"
+    cat >"$_conffile" <<TOP
+location /${_srvname} {
+    proxy_pass http://unix:${SOCKDIR}/${_srvname}.sock:/;
+TOP
+
+    _htpasswd="${DIR}/htpasswd"
+    if [[ -f "$_htpasswd" ]]; then
+        _srvpass="${SERVDIR}/${_srvname}.htpasswd"
+        cp "$_htpasswd" "$_srvpass"
+
+    cat >>"$_conffile" <<AUTH
+        auth_basic "$DIR";
+        auth_basic_user_file "$_srvpass";
+AUTH
+    fi
+
+    echo '}' >>"$_conffile"
+done
+
+exec nginx -g 'daemon off;'
+
+# vim: set tabstop=4 shiftwidth=4 expandtab :
